@@ -1,4 +1,18 @@
-#include "coord_transform.h"
+/*
+ * =====================================================================================
+ *
+ * Copyright (c) 2026 Zepp Health. All Rights Reserved. This computer program includes
+ * Confidential, Proprietary Information and is a Trade Secret of Zepp Health Ltd.
+ * All use, disclosure, and/or reproduction is prohibited unless authorized in writing.
+ * Licensed under the MIT License. You can contact below email if need.
+ *
+ * version: 0.0.1
+ * Author: wangwenbing@zepp.com
+ *
+ * =====================================================================================
+ */
+
+#include "coord_datum_transform.h"
 #include "geodesic.h"
 #include <math.h>
 #include <string.h>
@@ -7,7 +21,7 @@
 #include <stdlib.h>
 #include <errno.h>
 
-// 常量定义
+// Constants
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
@@ -18,7 +32,7 @@
 #define METERS_TO_FEET 3.280839895
 #define FEET_TO_METERS 0.3048
 
-// 椭球体定义
+// Ellipsoid definitions
 static const Ellipsoid ELLIPSOIDS[] =
 {
     // WGS84
@@ -26,12 +40,12 @@ static const Ellipsoid ELLIPSOIDS[] =
         6378137.0, 1.0 / 298.257223563, 6356752.314245,
         0.0066943799901413165, 0.0067394967422764341, "WGS84"
     },
-    // MGRS Grid (使用WGS84椭球)
+    // MGRS Grid (uses WGS84 ellipsoid)
     {
         6378137.0, 1.0 / 298.257223563, 6356752.314245,
         0.0066943799901413165, 0.0067394967422764341, "WGS84"
     },
-    // UTM Grid (使用WGS84椭球)
+    // UTM Grid (uses WGS84 ellipsoid)
     {
         6378137.0, 1.0 / 298.257223563, 6356752.314245,
         0.0066943799901413165, 0.0067394967422764341, "WGS84"
@@ -56,27 +70,27 @@ static const Ellipsoid ELLIPSOIDS[] =
         6377397.155, 1.0 / 299.1528128, 6356078.963,
         0.006674372, 0.006719219, "Bessel1841"
     },
-    // Airy 1830 (OSGB36 - 英国国家网格)
+    // Airy 1830 (OSGB36 - British National Grid)
     {
         6377563.396, 1.0 / 299.3249646, 6356256.909,
         0.0066705397616, 0.006715826523, "Airy1830"
     }
 };
 
-// 英国国家网格参数
-static const double OSGB36_A = 6377563.396;    // Airy 1830椭球长半轴
-static const double OSGB36_F = 1.0 / 299.3249646; // Airy 1830扁率
-static const double OSGB36_N0 = -100000.0;     // 北偏移
-static const double OSGB36_E0 = 400000.0;     // 东偏移
-static const double OSGB36_F0 = 0.9996012717; // 中央子午线比例因子
-static const double OSGB36_LAT0 = 49.0 * DEG_TO_RAD; // 真原点纬度
-static const double OSGB36_LON0 = -2.0 * DEG_TO_RAD; // 真原点经度
+// British National Grid parameters
+static const double OSGB36_A = 6377563.396;    // Airy 1830 semi-major axis
+static const double OSGB36_F = 1.0 / 299.3249646; // Airy 1830 flattening
+static const double OSGB36_N0 = -100000.0;     // Northing offset
+static const double OSGB36_E0 = 400000.0;     // Easting offset
+static const double OSGB36_F0 = 0.9996012717; // Central meridian scale factor
+static const double OSGB36_LAT0 = 49.0 * DEG_TO_RAD; // True origin latitude
+static const double OSGB36_LON0 = -2.0 * DEG_TO_RAD; // True origin longitude
 
-// 日本网格参数 (Tokyo Datum, Bessel 1841椭球)
+// Japan grid parameters (Tokyo Datum, Bessel 1841 ellipsoid)
 static const double JAPAN_GRID_A = 6377397.155;
 static const double JAPAN_GRID_F = 1.0 / 299.1528128;
 
-// 错误信息
+// Error messages
 static const char *ERROR_MESSAGES[] =
 {
     "Success",
@@ -92,10 +106,10 @@ static const char *ERROR_MESSAGES[] =
     "Unsupported format"
 };
 
-// 全局错误回调
+// Global error callback
 static void (*error_callback)(int, const char *) = NULL;
 
-// 设置错误
+// Set error
 static void set_error(int code, const char *message)
 {
     if (error_callback)
@@ -104,7 +118,7 @@ static void set_error(int code, const char *message)
     }
 }
 
-// ==================== 基础工具函数 ====================
+// ==================== Basic utility functions ====================
 int coord_is_valid_latitude(double lat)
 {
     return lat >= -90.0 && lat <= 90.0;
@@ -161,7 +175,7 @@ double coord_feet_to_meters(double feet)
     return feet * FEET_TO_METERS;
 }
 
-// ==================== 上下文管理 ====================
+// ==================== Context management ====================
 CoordContext *coord_create_context(MapDatum datum)
 {
     if (datum >= DATUM_MAX)
@@ -175,9 +189,9 @@ CoordContext *coord_create_context(MapDatum datum)
         return NULL;
     }
     memset(ctx, 0, sizeof(CoordContext));
-    // 设置椭球体
+    // Set ellipsoid
     ctx->ellipsoid = ELLIPSOIDS[datum];
-    // 初始化GeographicLib测地线对象
+    // Initialize GeographicLib geodesic object
     ctx->geod = (struct geod_geodesic *)malloc(sizeof(struct geod_geodesic));
     if (!ctx->geod)
     {
@@ -186,29 +200,29 @@ CoordContext *coord_create_context(MapDatum datum)
         return NULL;
     }
     geod_init(ctx->geod, ctx->ellipsoid.a, ctx->ellipsoid.f);
-    // 初始化转换参数表
+    // Initialize transform parameter table
     memset(ctx->transforms, 0, sizeof(ctx->transforms));
-    // 设置默认转换参数
-    // WGS84 <-> NAD83 (基本相同)
+    // Set default transform parameters
+    // WGS84 <-> NAD83 (nearly identical)
     ctx->transforms[DATUM_WGS84][DATUM_NAD83].dx = 0.0;
     ctx->transforms[DATUM_WGS84][DATUM_NAD83].dy = 0.0;
     ctx->transforms[DATUM_WGS84][DATUM_NAD83].dz = 0.0;
     ctx->transforms[DATUM_NAD83][DATUM_WGS84] =
         ctx->transforms[DATUM_WGS84][DATUM_NAD83];
-    // WGS84 <-> MGRS Grid (相同)
+    // WGS84 <-> MGRS Grid (same)
     ctx->transforms[DATUM_WGS84][DATUM_MGRS_GRID].dx = 0.0;
     ctx->transforms[DATUM_WGS84][DATUM_MGRS_GRID].dy = 0.0;
     ctx->transforms[DATUM_WGS84][DATUM_MGRS_GRID].dz = 0.0;
     ctx->transforms[DATUM_MGRS_GRID][DATUM_WGS84] =
         ctx->transforms[DATUM_WGS84][DATUM_MGRS_GRID];
-    // WGS84 <-> UTM Grid (相同)
+    // WGS84 <-> UTM Grid (same)
     ctx->transforms[DATUM_WGS84][DATUM_UTM_GRID].dx = 0.0;
     ctx->transforms[DATUM_WGS84][DATUM_UTM_GRID].dy = 0.0;
     ctx->transforms[DATUM_WGS84][DATUM_UTM_GRID].dz = 0.0;
     ctx->transforms[DATUM_UTM_GRID][DATUM_WGS84] =
         ctx->transforms[DATUM_WGS84][DATUM_UTM_GRID];
-    // WGS84 -> NAD27 (NADCON 参数, CONUS)
-    // 来源: National Geodetic Survey
+    // WGS84 -> NAD27 (NADCON parameters, CONUS)
+    // Source: National Geodetic Survey
     ctx->transforms[DATUM_WGS84][DATUM_NAD27].dx = -8.0;
     ctx->transforms[DATUM_WGS84][DATUM_NAD27].dy = 160.0;
     ctx->transforms[DATUM_WGS84][DATUM_NAD27].dz = 176.0;
@@ -216,8 +230,8 @@ CoordContext *coord_create_context(MapDatum datum)
     ctx->transforms[DATUM_WGS84][DATUM_NAD27].ry = 0.75;
     ctx->transforms[DATUM_WGS84][DATUM_NAD27].rz = -0.06;
     ctx->transforms[DATUM_WGS84][DATUM_NAD27].scale = -0.34;
-    // WGS84 -> ED50 (EPSG 参数)
-    // 来源: EPSG Dataset
+    // WGS84 -> ED50 (EPSG parameters)
+    // Source: EPSG Dataset
     ctx->transforms[DATUM_WGS84][DATUM_ED50].dx = -87.0;
     ctx->transforms[DATUM_WGS84][DATUM_ED50].dy = -98.0;
     ctx->transforms[DATUM_WGS84][DATUM_ED50].dz = -121.0;
@@ -225,12 +239,12 @@ CoordContext *coord_create_context(MapDatum datum)
     ctx->transforms[DATUM_WGS84][DATUM_ED50].ry = -0.32;
     ctx->transforms[DATUM_WGS84][DATUM_ED50].rz = -1.12;
     ctx->transforms[DATUM_WGS84][DATUM_ED50].scale = -3.72;
-    // WGS84 -> Tokyo (近似参数)
+    // WGS84 -> Tokyo (approximate parameters)
     ctx->transforms[DATUM_WGS84][DATUM_TOKYO].dx = -148.0;
     ctx->transforms[DATUM_WGS84][DATUM_TOKYO].dy = 507.0;
     ctx->transforms[DATUM_WGS84][DATUM_TOKYO].dz = 685.0;
-    // WGS84 -> OSGB36 (OSTN15 参数)
-    // 来源: Ordnance Survey National Grid (OSTN15)
+    // WGS84 -> OSGB36 (OSTN15 parameters)
+    // Source: Ordnance Survey National Grid (OSTN15)
     ctx->transforms[DATUM_WGS84][DATUM_OSGB36].dx = -446.448;
     ctx->transforms[DATUM_WGS84][DATUM_OSGB36].dy = 125.157;
     ctx->transforms[DATUM_WGS84][DATUM_OSGB36].dz = -542.060;
@@ -264,14 +278,14 @@ int coord_set_datum(CoordContext *ctx, MapDatum datum)
     return COORD_SUCCESS;
 }
 
-// ==================== UTM区域计算 ====================
+// ==================== UTM zone calculation ====================
 int coord_get_utm_zone(double longitude, double latitude)
 {
     if (!coord_is_valid_longitude(longitude) || !coord_is_valid_latitude(latitude))
     {
         return 0;
     }
-    // 标准化经度
+    // Normalize longitude
     double lon_norm = longitude;
     while (lon_norm < -180.0)
     {
@@ -281,7 +295,7 @@ int coord_get_utm_zone(double longitude, double latitude)
     {
         lon_norm -= 360.0;
     }
-    // 特殊区域处理
+    // Special-case regions
     if (latitude >= 56.0 && latitude < 64.0)
     {
         if (lon_norm >= 3.0 && lon_norm < 12.0)
@@ -308,7 +322,7 @@ int coord_get_utm_zone(double longitude, double latitude)
             return 37;
         }
     }
-    // 标准UTM区域
+    // Standard UTM zone
     int zone = (int)((lon_norm + 180.0) / 6.0) + 1;
     if (zone < 1)
     {
@@ -331,7 +345,7 @@ char coord_get_utm_band(double latitude)
     {
         return 'X';
     }
-    // UTM纬度带定义表（8度一个带，跳过I和O）
+    // UTM latitude band table (8° per band, skipping I and O)
     struct
     {
         double min, max;
@@ -367,10 +381,10 @@ char coord_get_utm_band(double latitude)
             return bands[i].band;
         }
     }
-    return 'Z'; // 不应该到达这里
+    return 'Z'; // Should not reach here
 }
 
-// ==================== 坐标验证 ====================
+// ==================== Coordinate validation ====================
 int coord_validate_point(const GeoCoord *coord)
 {
     if (!coord)
@@ -396,15 +410,15 @@ int coord_validate_utm(const UTMPoint *utm)
     {
         return 0;
     }
-    // 放宽东距检查范围
+    // Relax easting check range
     if (utm->easting < 100000.0 || utm->easting > 900000.0)
     {
         return 0;
     }
-    // 放宽北距检查范围，考虑南北半球
+    // Relax northing check range, consider hemispheres
     if (utm->band >= 'N' && utm->band <= 'X')
     {
-        // 北半球：0-10,000,000米
+        // Northern hemisphere: 0-10,000,000 m
         if (utm->northing < 0.0 || utm->northing > 10000000.0)
         {
             return 0;
@@ -412,7 +426,7 @@ int coord_validate_utm(const UTMPoint *utm)
     }
     else
     {
-        // 南半球：10,000,000-20,000,000米（假北距）
+        // Southern hemisphere: 10,000,000-20,000,000 m (false northing)
         if (utm->northing < 10000000.0 || utm->northing > 20000000.0)
         {
             return 0;
@@ -427,23 +441,23 @@ static int coord_validate_mgrs(const MGRSPoint *mgrs)
     {
         return 0;
     }
-    // 验证UTM区域
+    // Validate UTM zone
     if (mgrs->zone < 1 || mgrs->zone > 60)
     {
         return 0;
     }
-    // 验证纬度带
+    // Validate latitude band
     if (mgrs->band < 'C' || mgrs->band > 'X' ||
             mgrs->band == 'I' || mgrs->band == 'O')
     {
         return 0;
     }
-    // 验证网格方标识符
+    // Validate grid square identifier
     if (strlen(mgrs->square) != 2)
     {
         return 0;
     }
-    // 验证网格方字母（跳过I和O）
+    // Validate grid square letters (skip I and O)
     if (mgrs->square[0] < 'A' || mgrs->square[0] > 'Z' ||
             mgrs->square[0] == 'I' || mgrs->square[0] == 'O' ||
             mgrs->square[1] < 'A' || mgrs->square[1] > 'Z' ||
@@ -451,7 +465,7 @@ static int coord_validate_mgrs(const MGRSPoint *mgrs)
     {
         return 0;
     }
-    // 验证东距和北距
+    // Validate easting and northing
     if (mgrs->easting < 0.0 || mgrs->easting > 99999.0)
     {
         return 0;
@@ -463,7 +477,7 @@ static int coord_validate_mgrs(const MGRSPoint *mgrs)
     return 1;
 }
 
-// ==================== 坐标解析 ====================
+// ==================== Coordinate parsing ====================
 ParseResult coord_parse_string(const char *str, CoordFormat format,
                                MapDatum datum)
 {
@@ -478,7 +492,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
         strcpy(result.error_msg, "Input string is NULL");
         return result;
     }
-    // 跳过前导空格
+    // Skip leading whitespace
     while (isspace((unsigned char)*str))
     {
         str++;
@@ -487,7 +501,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
     {
         case COORD_FORMAT_DD:
         {
-            // 格式: "31.230416°N, 121.473701°E" 或 "31.230416, 121.473701"
+            // Format: "31.230416°N, 121.473701°E" or "31.230416, 121.473701"
             double lat, lon;
             char lat_dir = 'N', lon_dir = 'E';
             int count = sscanf(str, "%lf%*[ °]%c%*[ ,]%lf%*[ °]%c",
@@ -505,7 +519,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
             }
             else
             {
-                // 尝试不带方向字符的格式
+                // Try format without direction letters
                 count = sscanf(str, "%lf%*[ ,]%lf", &lat, &lon);
                 if (count != 2)
                 {
@@ -525,7 +539,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
         }
         case COORD_FORMAT_DMS:
         {
-            // 格式: "31°13'49.5\"N, 121°28'25.32\"E"
+            // Format: "31°13'49.5\"N, 121°28'25.32\"E"
             int lat_deg, lat_min, lon_deg, lon_min;
             double lat_sec, lon_sec;
             char lat_dir, lon_dir;
@@ -559,7 +573,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
         }
         case COORD_FORMAT_DMM:
         {
-            // 格式: "31°13.825'N, 121°28.422'E"
+            // Format: "31°13.825'N, 121°28.422'E"
             int lat_deg, lon_deg;
             double lat_min, lon_min;
             char lat_dir, lon_dir;
@@ -593,7 +607,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
         }
         case COORD_FORMAT_UTM:
         {
-            // 格式: "50N 447600E 4419300N" 或 "50N 447600 4419300"
+            // Format: "50N 447600E 4419300N" or "50N 447600 4419300"
             int zone;
             char band;
             double easting, northing;
@@ -602,7 +616,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                                &zone, &band, &easting, &east_dir, &northing, &north_dir);
             if (count != 6)
             {
-                // 尝试不带方向字符的格式
+                // Try format without direction letters
                 count = sscanf(str, "%d%c %lf %lf", &zone, &band, &easting, &northing);
                 if (count != 4)
                 {
@@ -610,14 +624,14 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                     return result;
                 }
             }
-            // 创建UTM点
+            // Create UTM point
             UTMPoint utm = {zone, band, easting, northing, 0.0, 0.9996, datum};
             if (!coord_validate_utm(&utm))
             {
                 strcpy(result.error_msg, "Invalid UTM coordinate");
                 return result;
             }
-            // 转换为地理坐标
+            // Convert to geographic coordinate
             CoordContext *ctx = coord_create_context(datum);
             if (!ctx)
             {
@@ -638,17 +652,17 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
         }
         case COORD_FORMAT_MGRS:
         {
-            // 格式: "51Q SB 54634 56142" 或 "51QSB 54634 56142"
+            // Format: "51Q SB 54634 56142" or "51QSB 54634 56142"
             int zone;
             char band;
-            char square[3] = {0};  // 网格方 (2个字母 + null终止符)
+            char square[3] = {0};  // Grid square (2 letters + null terminator)
             double easting, northing;
-            // 尝试多种格式
+            // Try multiple formats
             int count = sscanf(str, "%d%c%2s %lf %lf",
                                &zone, &band, square, &easting, &northing);
             if (count != 5)
             {
-                // 尝试带空格的格式: "51Q SB 54634 56142"
+                // Try spaced format: "51Q SB 54634 56142"
                 count = sscanf(str, "%d%c %2s %lf %lf",
                                &zone, &band, square, &easting, &northing);
                 if (count != 5)
@@ -657,7 +671,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                     return result;
                 }
             }
-            // 验证MGRS参数
+            // Validate MGRS parameters
             if (zone < 1 || zone > 60)
             {
                 strcpy(result.error_msg, "Invalid MGRS zone (1-60)");
@@ -673,7 +687,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                 strcpy(result.error_msg, "Invalid MGRS square (must be 2 letters)");
                 return result;
             }
-            // 验证网格方字母
+            // Validate grid square letters
             if (square[0] < 'A' || square[0] > 'Z' || square[0] == 'I' || square[0] == 'O'
                     ||
                     square[1] < 'A' || square[1] > 'Z' || square[1] == 'I' || square[1] == 'O')
@@ -681,7 +695,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                 strcpy(result.error_msg, "Invalid MGRS square letters");
                 return result;
             }
-            // 验证东距和北距
+            // Validate easting and northing
             if (easting < 0.0 || easting > 100000.0)
             {
                 strcpy(result.error_msg, "MGRS easting must be 0-100000 meters");
@@ -692,7 +706,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                 strcpy(result.error_msg, "MGRS northing must be 0-100000 meters");
                 return result;
             }
-            // 创建MGRS点
+            // Create MGRS point
             MGRSPoint mgrs;
             mgrs.zone = zone;
             mgrs.band = band;
@@ -702,13 +716,13 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
             mgrs.easting = easting;
             mgrs.northing = northing;
             mgrs.datum = datum;
-            // 使用coord_validate_mgrs验证
+            // Validate with coord_validate_mgrs
             if (!coord_validate_mgrs(&mgrs))
             {
                 strcpy(result.error_msg, "Invalid MGRS coordinate");
                 return result;
             }
-            // 转换为地理坐标
+            // Convert to geographic coordinate
             CoordContext *ctx = coord_create_context(datum);
             if (!ctx)
             {
@@ -729,13 +743,13 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
         }
         case COORD_FORMAT_BRITISH_GRID:
         {
-            // 格式: "TQ 12345 67890" 或 "TQ1234567890"
+            // Format: "TQ 12345 67890" or "TQ1234567890"
             char letters[3] = {0};
             double easting, northing;
             int count = sscanf(str, "%2s %lf %lf", letters, &easting, &northing);
             if (count != 3)
             {
-                // 尝试不带空格的格式: "TQ1234567890"
+                // Try format without spaces: "TQ1234567890"
                 char buffer[32];
                 strncpy(buffer, str, sizeof(buffer) - 1);
                 buffer[sizeof(buffer) - 1] = '\0';
@@ -744,7 +758,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                     letters[0] = buffer[0];
                     letters[1] = buffer[1];
                     letters[2] = '\0';
-                    // 解析数字部分
+                    // Parse numeric part
                     if (sscanf(buffer + 2, "%lf%lf", &easting, &northing) == 2)
                     {
                         count = 3;
@@ -756,13 +770,13 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                 strcpy(result.error_msg, "Failed to parse British Grid format");
                 return result;
             }
-            // 创建British Grid点
+            // Create British Grid point
             BritishGridPoint bg;
             strncpy(bg.letters, letters, 3);
             bg.easting = easting;
             bg.northing = northing;
             bg.datum = datum;
-            // 转换为地理坐标
+            // Convert to geographic coordinate
             CoordContext *ctx = coord_create_context(datum);
             if (!ctx)
             {
@@ -783,7 +797,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
         }
         case COORD_FORMAT_JAPAN_GRID:
         {
-            // 格式: "Zone 3: 12345.6, 67890.1" 或 "3 12345.6 67890.1"
+            // Format: "Zone 3: 12345.6, 67890.1" or "3 12345.6 67890.1"
             int zone;
             double x, y;
             int count = sscanf(str, "Zone %d: %lf, %lf", &zone, &x, &y);
@@ -796,13 +810,13 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
                 strcpy(result.error_msg, "Failed to parse Japan Grid format");
                 return result;
             }
-            // 创建Japan Grid点
+            // Create Japan Grid point
             JapanGridPoint jg;
             jg.zone = zone;
             jg.x = x;
             jg.y = y;
             jg.datum = datum;
-            // 转换为地理坐标
+            // Convert to geographic coordinate
             CoordContext *ctx = coord_create_context(datum);
             if (!ctx)
             {
@@ -829,7 +843,7 @@ ParseResult coord_parse_string(const char *str, CoordFormat format,
     return result;
 }
 
-// 在coord_auto_parse函数中，添加对MGRS格式的自动检测
+// In coord_auto_parse, add auto-detection for MGRS format
 ParseResult coord_auto_parse(const char *str)
 {
     ParseResult result = {0};
@@ -838,23 +852,23 @@ ParseResult coord_auto_parse(const char *str)
         strcpy(result.error_msg, "Input string is NULL");
         return result;
     }
-    // 跳过前导空格
+    // Skip leading whitespace
     const char *s = str;
     while (isspace((unsigned char)*s))
     {
         s++;
     }
-    // 检查是否是MGRS格式
+    // Check for MGRS format
     int zone;
     char band;
     char square[3];
     double easting, northing;
-    // 尝试解析MGRS格式
+    // Try parsing MGRS format
     int count = sscanf(s, "%d%c%2s %lf %lf", &zone, &band, square, &easting,
                        &northing);
     if (count == 5)
     {
-        // 验证MGRS参数
+        // Validate MGRS parameters
         if (zone >= 1 && zone <= 60 &&
                 band >= 'C' && band <= 'X' && band != 'I' && band != 'O' &&
                 strlen(square) == 2 &&
@@ -863,7 +877,7 @@ ParseResult coord_auto_parse(const char *str)
                 easting >= 0.0 && easting <= 100000.0 &&
                 northing >= 0.0 && northing <= 100000.0)
         {
-            // 看起来像MGRS格式
+            // Looks like MGRS format
             result = coord_parse_string(str, COORD_FORMAT_MGRS, DATUM_WGS84);
             if (result.success)
             {
@@ -871,7 +885,7 @@ ParseResult coord_auto_parse(const char *str)
             }
         }
     }
-    // 检查是否是UTM格式
+    // Check for UTM format
     char east_dir, north_dir;
     count = sscanf(s, "%d%c %lf%c %lf%c", &zone, &band, &easting, &east_dir,
                    &northing, &north_dir);
@@ -888,7 +902,7 @@ ParseResult coord_auto_parse(const char *str)
             }
         }
     }
-    // 检查是否是British Grid格式
+    // Check for British Grid format
     char letters[3];
     double east, north;
     if (sscanf(s, "%2s %lf %lf", letters, &east, &north) == 3)
@@ -902,7 +916,7 @@ ParseResult coord_auto_parse(const char *str)
             }
         }
     }
-    // 检查是否是Japan Grid格式
+    // Check for Japan Grid format
     int j_zone;
     double x, y;
     if (sscanf(s, "Zone %d: %lf, %lf", &j_zone, &x, &y) == 3 ||
@@ -914,7 +928,7 @@ ParseResult coord_auto_parse(const char *str)
             return result;
         }
     }
-    // 尝试其他格式
+    // Try other formats
     CoordFormat formats[] = {COORD_FORMAT_DD, COORD_FORMAT_DMS, COORD_FORMAT_DMM};
     MapDatum datum = DATUM_WGS84;
     for (int i = 0; i < 3; i++)
@@ -930,7 +944,7 @@ ParseResult coord_auto_parse(const char *str)
 }
 
 
-// ==================== 坐标格式化函数 ====================
+// ==================== Coordinate formatting functions ====================
 int coord_format_to_string(const GeoCoord *coord, CoordFormat format,
                            char *buffer, size_t buffer_size)
 {
@@ -1068,8 +1082,8 @@ int coord_format_japan_grid(const JapanGridPoint *jg, char *buffer,
             || (size_t)written >= buffer_size) ? COORD_ERROR_FORMAT : COORD_SUCCESS;
 }
 
-// ==================== 坐标转换函数 ====================
-// 地理坐标转UTM
+// ==================== Coordinate conversion functions ====================
+// Geographic coordinate to UTM
 int coord_to_utm(CoordContext *ctx, const GeoCoord *geo, UTMPoint *utm)
 {
     if (!ctx || !geo || !utm)
@@ -1080,20 +1094,20 @@ int coord_to_utm(CoordContext *ctx, const GeoCoord *geo, UTMPoint *utm)
     {
         return COORD_ERROR_INVALID_COORD;
     }
-    // 计算UTM区域
+    // Calculate UTM zone
     int zone = coord_get_utm_zone(geo->longitude, geo->latitude);
     if (zone < 1 || zone > 60)
     {
         return COORD_ERROR_INVALID_UTM_ZONE;
     }
-    // 计算中央子午线
+    // Calculate central meridian
     double lon_center = (zone - 1) * 6.0 - 180.0 + 3.0;
-    // 转换为弧度
+    // Convert to radians
     double lat_rad = coord_deg_to_rad(geo->latitude);
     double lon_rad = coord_deg_to_rad(geo->longitude);
     double lon_center_rad = coord_deg_to_rad(lon_center);
-    // UTM转换参数
-    double k0 = 0.9996;  // UTM比例因子
+    // UTM conversion parameters
+    double k0 = 0.9996;  // UTM scale factor
     double a = ctx->ellipsoid.a;
     double f = ctx->ellipsoid.f;
     double e2 = 2 * f - f * f;
@@ -1104,28 +1118,28 @@ int coord_to_utm(CoordContext *ctx, const GeoCoord *geo, UTMPoint *utm)
     double T = tan_lat * tan_lat;
     double C = e2 * cos_lat * cos_lat / (1.0 - e2);
     double A = (lon_rad - lon_center_rad) * cos_lat;
-    // 计算M（子午线弧长）
+    // Compute M (meridional arc length)
     double M = a * ((1.0 - e2 / 4.0 - 3.0 * e2 * e2 / 64.0 - 5.0 * e2 * e2 * e2 /
                      256.0) * lat_rad
                     - (3.0 * e2 / 8.0 + 3.0 * e2 * e2 / 32.0 + 45.0 * e2 * e2 * e2 / 1024.0) * sin(
                         2.0 * lat_rad)
                     + (15.0 * e2 * e2 / 256.0 + 45.0 * e2 * e2 * e2 / 1024.0) * sin(4.0 * lat_rad)
                     - (35.0 * e2 * e2 * e2 / 3072.0) * sin(6.0 * lat_rad));
-    // 计算UTM坐标
+    // Compute UTM coordinates
     double A2 = A * A;
     double A3 = A2 * A;
     double A4 = A3 * A;
     double A5 = A4 * A;
     double A6 = A5 * A;
-    // 东距
+    // Easting
     utm->easting = k0 * N * (A + (1.0 - T + C) * A3 / 6.0
                              + (5.0 - 18.0 * T + T * T + 72.0 * C - 58.0 * e2) * A5 / 120.0)
-                   + 500000.0;  // 假东距
-    // 北距
+                   + 500000.0;  // False easting
+    // Northing
     utm->northing = k0 * (M + N * tan_lat *
                           (A2 / 2.0 + (5.0 - T + 9.0 * C + 4.0 * C * C) * A4 / 24.0
                            + (61.0 - 58.0 * T + T * T + 600.0 * C - 330.0 * e2) * A6 / 720.0));
-    // 如果是南半球，加上假北距
+    // If southern hemisphere, add false northing
     if (geo->latitude < 0.0)
     {
         utm->northing += 10000000.0;
@@ -1148,21 +1162,21 @@ int coord_from_utm(CoordContext *ctx, const UTMPoint *utm, GeoCoord *geo)
     {
         return COORD_ERROR_INVALID_COORD;
     }
-    // 计算中央子午线
+    // Calculate central meridian
     double lon_center = (utm->zone - 1) * 6.0 - 180.0 + 3.0;
     double k0 = 0.9996;
     double a = ctx->ellipsoid.a;
     double f = ctx->ellipsoid.f;
     double e2 = 2 * f - f * f;
-    // 移除假东距
+    // Remove false easting
     double x = utm->easting - 500000.0;
     double y = utm->northing;
-    // 如果是南半球，移除假北距
+    // If southern hemisphere, remove false northing
     if (utm->band < 'N')
     {
         y -= 10000000.0;
     }
-    // 计算脚点纬度
+    // Compute footpoint latitude
     double M = y / k0;
     double mu = M / (a * (1.0 - e2 / 4.0 - 3.0 * e2 * e2 / 64.0 - 5.0 * e2 * e2 * e2
                           / 256.0));
@@ -1200,7 +1214,7 @@ int coord_from_utm(CoordContext *ctx, const UTMPoint *utm, GeoCoord *geo)
     return COORD_SUCCESS;
 }
 
-// 辅助函数：获取字母在MGRS字母表中的索引（跳过I和O）
+// Helper: get index of letter in MGRS alphabet (skip I and O)
 static int get_mgrs_letter_index(char letter)
 {
     if (letter < 'A' || letter > 'Z' || letter == 'I' || letter == 'O')
@@ -1219,7 +1233,7 @@ static int get_mgrs_letter_index(char letter)
     return index;
 }
 
-// 辅助函数：从索引获取MGRS字母（跳过I和O）
+// Helper: get MGRS letter from index (skip I and O)
 static char get_mgrs_letter_from_index(int index)
 {
     if (index < 0 || index > 23)
@@ -1242,7 +1256,7 @@ static char get_mgrs_letter_from_index(int index)
     return letter;
 }
 
-// ==================== 修复MGRS转换的关键函数 ====================
+// ==================== Key functions to fix MGRS conversion ====================
 int coord_from_mgrs(CoordContext *ctx, const MGRSPoint *mgrs, GeoCoord *geo)
 {
     if (!ctx || !mgrs || !geo)
@@ -1260,20 +1274,20 @@ int coord_from_mgrs(CoordContext *ctx, const MGRSPoint *mgrs, GeoCoord *geo)
     double easting = mgrs->easting;
     double northing = mgrs->northing;
 
-    // MGRS 100k 网格列字母反向计算 (WGS84/现代基准)
-    // 使用与 coord_to_mgrs 相同的 6-set 系统进行反向计算
+    // Reverse compute MGRS 100k grid column letter (WGS84/modern datums)
+    // Use the same 6-set system as coord_to_mgrs for reverse computation
     //
-    // 从列字母反推 col_100k 的逻辑:
-    // 1. 确定 set (zone % 6)
-    // 2. 获取该 set 的起始字母
-    // 3. 从起始字母开始计数，直到达到目标列字母
+    // Logic to derive col_100k from column letter:
+    // 1. Determine set (zone % 6)
+    // 2. Get the start letter for the set
+    // 3. Count from the start letter until the target column letter
 
-    // 确定 set (1-6)
+    // Determine set (1-6)
     int set = zone % 6;
     if (set == 0)
         set = 6;
 
-    // 获取该 set 的起始列字母
+    // Get the start column letter for the set
     char col_origin;
     switch (set)
     {
@@ -1294,7 +1308,7 @@ int coord_from_mgrs(CoordContext *ctx, const MGRSPoint *mgrs, GeoCoord *geo)
             break;
     }
 
-    // 从起始字母计数到目标列字母，跳过 I 和 O
+    // Count from start letter to target column letter, skipping I and O
     int col_100k = 0;
     int temp_code = col_origin;
     while (temp_code != col_letter)
@@ -1311,7 +1325,7 @@ int coord_from_mgrs(CoordContext *ctx, const MGRSPoint *mgrs, GeoCoord *geo)
         col_100k++;
     }
 
-    // 行字母反向计算
+    // Reverse compute row letter
     int row_idx = get_mgrs_letter_index(row_letter);
     if (row_idx < 0)
     {
@@ -1399,36 +1413,36 @@ int coord_to_mgrs(CoordContext *ctx, const GeoCoord *geo, MGRSPoint *mgrs)
     char band = utm.band;
     int col_100k = (int)(utm.easting / 100000.0);
 
-    // 处理南半球北距
-    // 南半球的UTM北距 = 10000000 + 真实北距（从赤道向南为正）
-    // 但 MGRS 需要使用真实北距来计算 100km 网格
+    // Handle southern hemisphere northing
+    // Southern hemisphere UTM northing = 10000000 + true northing (positive south of equator)
+    // But MGRS uses true northing to compute 100km grid
     double utm_northing_for_mgrs = utm.northing;
     if (band < 'N')
     {
-        // 南半球：移除假北距，得到真实北距（相对于南半球起点）
-        // 注意：在南半球，真实北距可能是负数（相对于赤道）
-        // 但 MGRS 在南半球使用相对于南极方向计算
+        // Southern hemisphere: remove false northing to get true northing (relative to southern origin)
+        // Note: in the southern hemisphere, true northing may be negative (relative to equator)
+        // But MGRS in the southern hemisphere is computed relative to the poleward direction
         utm_northing_for_mgrs -= 10000000.0;
     }
 
-    // 计算 100km 网格索引
+    // Compute 100km grid indices
     int row_100k = (int)(utm_northing_for_mgrs / 100000.0);
 
-    // 南半球特殊处理：row_100k 可能是负数
-    // MGRS 在南半球的 row_100k 从 0 开始递增（向南）
-    // 如果是负数，说明坐标在南半球高纬度区域
+    // Southern hemisphere special case: row_100k may be negative
+    // In the southern hemisphere, row_100k starts at 0 and increases southward
+    // If negative, the coordinate is in high southern latitudes
     if (row_100k < 0)
     {
-        // 南半球极地区域，需要特殊处理
-        // 将负数索引转换为正数索引
+        // Polar region in southern hemisphere needs special handling
+        // Convert negative index to positive index
         row_100k = 20 + (row_100k % 20);
     }
 
-    // MGRS 100k 网格列字母计算 (WGS84/现代基准)
-    // 参考: GeoTrellis MGRS 实现 (基于 proj4js/mgrs)
-    // 使用 6-set 循环系统，而不是简单的 (zone-1)%3
+    // MGRS 100k grid column letter calculation (WGS84/modern datums)
+    // Reference: GeoTrellis MGRS implementation (based on proj4js/mgrs)
+    // Use 6-set cycle system instead of simple (zone-1)%3
     //
-    // SET_ORIGIN_COLUMN_LETTERS = "AJSAJS" (6 个 set 循环)
+    // SET_ORIGIN_COLUMN_LETTERS = "AJSAJS" (6-set cycle)
     // - Zone % 6 = 1: A (ASCII 65)
     // - Zone % 6 = 2: J (ASCII 74)
     // - Zone % 6 = 3: S (ASCII 83)
@@ -1436,20 +1450,20 @@ int coord_to_mgrs(CoordContext *ctx, const GeoCoord *geo, MGRSPoint *mgrs)
     // - Zone % 6 = 5: J (ASCII 74)
     // - Zone % 6 = 0: S (ASCII 65)
     //
-    // 计算公式: col_letter = origin + col_100k - 1
-    // 需要跳过 I (73) 和 O (79)
+    // Formula: col_letter = origin + col_100k - 1
+    // Skip I (73) and O (79)
     //
-    // 示例: Zone 50, col_100k=5
+    // Example: Zone 50, col_100k=5
     // - set = 50 % 6 = 2
     // - origin = 'J' (ASCII 74)
     // - col = 'J' + 5 - 1 = 78 = 'N' ✓
 
-    // 确定 set (1-6)
+    // Determine set (1-6)
     int set = zone % 6;
     if (set == 0)
         set = 6;
 
-    // 获取该 set 的起始列字母
+    // Get the start column letter for the set
     char col_origin;
     switch (set)
     {
@@ -1470,11 +1484,11 @@ int coord_to_mgrs(CoordContext *ctx, const GeoCoord *geo, MGRSPoint *mgrs)
             break;
     }
 
-    // 计算列字母，跳过 I 和 O
+    // Compute column letter, skipping I and O
     int col_letter_code = col_origin + col_100k - 1;
     char col_letter;
 
-    // 处理 I 和 O 的跳过逻辑
+    // Handle I and O skipping
     int temp_code = col_origin;
     for (int i = 1; i < col_100k; i++)
     {
@@ -1484,18 +1498,18 @@ int coord_to_mgrs(CoordContext *ctx, const GeoCoord *geo, MGRSPoint *mgrs)
     }
     col_letter_code = temp_code;
 
-    // 处理循环 (超过 Z 时回到 A)
+    // Handle wrap-around (after Z back to A)
     if (col_letter_code > 'Z')
     {
         col_letter_code = col_letter_code - 'Z' + 'A' - 1;
-        // 再次检查 I 和 O
+        // Re-check I and O
         if (col_letter_code == 'I' || col_letter_code == 'O')
             col_letter_code++;
     }
 
     col_letter = (char)col_letter_code;
 
-    // 计算行字母 (使用原有的奇偶 zone 逻辑)
+    // Compute row letter (using existing odd/even zone logic)
     int zone_parity = zone % 2;
     int row_offset = 0;
     if (band >= 'N' && band <= 'X')
@@ -1529,7 +1543,7 @@ int coord_to_mgrs(CoordContext *ctx, const GeoCoord *geo, MGRSPoint *mgrs)
     mgrs->square[2] = '\0';
     mgrs->easting = fmod(utm.easting, 100000.0);
     mgrs->northing = fmod(utm_northing_for_mgrs, 100000.0);
-    // 确保 northing 为正数
+    // Ensure northing is positive
     if (mgrs->northing < 0)
     {
         mgrs->northing += 100000.0;
@@ -1538,7 +1552,7 @@ int coord_to_mgrs(CoordContext *ctx, const GeoCoord *geo, MGRSPoint *mgrs)
     return COORD_SUCCESS;
 }
 
-// 地理坐标转英国网格
+// Geographic coordinate to British Grid
 int coord_to_british_grid(CoordContext *ctx, const GeoCoord *geo,
                           BritishGridPoint *bg)
 {
@@ -1551,8 +1565,8 @@ int coord_to_british_grid(CoordContext *ctx, const GeoCoord *geo,
         return COORD_ERROR_INVALID_COORD;
     }
 
-    // British National Grid 必须使用 OSGB36 基准和 Airy 1830 椭球
-    // 如果输入不是 OSGB36，需要先进行基准转换
+    // British National Grid must use OSGB36 datum and Airy 1830 ellipsoid
+    // If input is not OSGB36, convert datum first
     GeoCoord osgb_geo;
     if (geo->datum != DATUM_OSGB36)
     {
@@ -1567,7 +1581,7 @@ int coord_to_british_grid(CoordContext *ctx, const GeoCoord *geo,
         osgb_geo = *geo;
     }
 
-    // 使用 OSGB36/Airy 1830 椭球参数
+    // Use OSGB36/Airy 1830 ellipsoid parameters
     double a = OSGB36_A;
     double f = OSGB36_F;
     double e2 = 2 * f - f * f;
@@ -1581,14 +1595,14 @@ int coord_to_british_grid(CoordContext *ctx, const GeoCoord *geo,
     double T = tan_lat * tan_lat;
     double C = e2 * cos_lat * cos_lat / (1.0 - e2);
     double A = (lon_rad - OSGB36_LON0) * cos_lat;
-    // 计算M
+    // Compute M
     double M = a * ((1.0 - e2 / 4.0 - 3.0 * e2 * e2 / 64.0 - 5.0 * e2 * e2 * e2 /
                      256.0) * lat_rad
                     - (3.0 * e2 / 8.0 + 3.0 * e2 * e2 / 32.0 + 45.0 * e2 * e2 * e2 / 1024.0) * sin(
                         2.0 * lat_rad)
                     + (15.0 * e2 * e2 / 256.0 + 45.0 * e2 * e2 * e2 / 1024.0) * sin(4.0 * lat_rad)
                     - (35.0 * e2 * e2 * e2 / 3072.0) * sin(6.0 * lat_rad));
-    // 计算M0
+    // Compute M0
     double M0 = a * ((1.0 - e2 / 4.0 - 3.0 * e2 * e2 / 64.0 - 5.0 * e2 * e2 * e2 /
                       256.0) * OSGB36_LAT0
                      - (3.0 * e2 / 8.0 + 3.0 * e2 * e2 / 32.0 + 45.0 * e2 * e2 * e2 / 1024.0) * sin(
@@ -1607,36 +1621,36 @@ int coord_to_british_grid(CoordContext *ctx, const GeoCoord *geo,
                                             (A2 / 2.0 + (5.0 - T + 9.0 * C + 4.0 * C * C) * A4 / 24.0
                                                     + (61.0 - 58.0 * T + T * T + 600.0 * C - 330.0 * e2) * A6 / 720.0));
 
-    // 计算英国国家网格字母
-    // 英国网格使用特殊的 500km 方字母系统
-    // 注意：对于超出英国范围的坐标，字母没有标准定义
-    // 这里使用扩展的循环计算方式
+    // Compute British National Grid letters
+    // British Grid uses a special 500km square letter system
+    // Note: for coordinates outside the UK, letters are not standard
+    // Here we use an extended cyclic computation
 
-    // 计算 500km 方索引
+    // Compute 500km square index
     int e500k = (int)(bg->easting / 500000.0);
     int n500k = (int)(bg->northing / 500000.0);
 
-    // 处理负值索引
-    while (e500k < 0) e500k += 25;  // 确保正数
+    // Handle negative indices
+    while (e500k < 0) e500k += 25;  // Ensure positive
     while (n500k < 0) n500k += 25;
 
-    // 100km 方内的字母
+    // Letters within 100km square
     int e100k = (int)(fmod(fabs(bg->easting), 500000.0) / 100000.0);
     int n100k = (int)(fmod(fabs(bg->northing), 500000.0) / 100000.0);
 
-    // 使用英国网格字母表（跳过 I）
+    // Use British Grid alphabet (skip I)
     const char *bg_letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
-    // 计算东向字母（循环使用字母表）
+    // Compute easting letter (cycle alphabet)
     int e_idx = (e500k * 5 + e100k) % 25;
     bg->letters[0] = bg_letters[e_idx];
 
-    // 计算北向字母（循环使用字母表）
+    // Compute northing letter (cycle alphabet)
     int n_idx = (n500k * 5 + n100k) % 25;
     bg->letters[1] = bg_letters[n_idx];
 
     bg->letters[2] = '\0';
-    bg->datum = DATUM_OSGB36;  // British Grid 始终是 OSGB36 基准
+    bg->datum = DATUM_OSGB36;  // British Grid always uses OSGB36 datum
     return COORD_SUCCESS;
 }
 
@@ -1648,32 +1662,32 @@ int coord_from_british_grid(CoordContext *ctx, const BritishGridPoint *bg,
         return COORD_ERROR_INVALID_INPUT;
     }
 
-    // 英国国家网格 (OSGB36) 使用 Airy 1830 椭球
-    // 首先将英国网格坐标转换为 OSGB36 经纬度
-    // 然后转换为 WGS84
+    // British National Grid (OSGB36) uses the Airy 1830 ellipsoid
+    // First convert British Grid coordinates to OSGB36 lat/lon
+    // Then convert to WGS84
 
-    // 移除东偏移和北偏移
+    // Remove easting and northing offsets
     double E = bg->easting;
     double N = bg->northing;
 
-    // 临时使用 WGS84 椭球进行简化计算
-    // 注意：完整的 OSGB36 转换需要使用 Airy 1830 椭球参数
+    // Temporarily use WGS84 ellipsoid for simplified computation
+    // Note: full OSGB36 conversion requires Airy 1830 ellipsoid parameters
     double a = OSGB36_A;
     double f = OSGB36_F;
     double e2 = 2 * f - f * f;
 
-    // 计算中央经线和纬度原点
+    // Compute central meridian and latitude of origin
     double lon0 = OSGB36_LON0;
     double E0 = OSGB36_E0;
     double N0 = OSGB36_N0;
     double F0 = OSGB36_F0;
 
-    // 初始估计纬度
+    // Initial latitude estimate
     double M_prime = (N - N0) / F0;
     double mu_prime = M_prime / (a * (1.0 - e2 / 4.0 - 3.0 * e2 * e2 / 64.0
                                    - 5.0 * e2 * e2 * e2 / 256.0));
 
-    // 计算初始纬度
+    // Compute initial latitude
     double e1 = (1.0 - sqrt(1.0 - e2)) / (1.0 + sqrt(1.0 - e2));
     double J1 = 3.0 * e1 / 2.0 - 27.0 * e1 * e1 * e1 / 32.0;
     double J2 = 21.0 * e1 * e1 / 16.0 - 55.0 * e1 * e1 * e1 * e1 / 32.0;
@@ -1683,7 +1697,7 @@ int coord_from_british_grid(CoordContext *ctx, const BritishGridPoint *bg,
     double lat_prime = mu_prime + J1 * sin(2.0 * mu_prime) + J2 * sin(4.0 * mu_prime)
                       + J3 * sin(6.0 * mu_prime) + J4 * sin(8.0 * mu_prime);
 
-    // 迭代计算精确纬度和经度
+    // Iteratively compute precise latitude and longitude
     double lat_rad = lat_prime;
     double lon_rad = lon0;
 
@@ -1732,29 +1746,29 @@ int coord_from_british_grid(CoordContext *ctx, const BritishGridPoint *bg,
                           + XIIA * delta_E4 * delta_E3;
         lon_rad = lon0 + lon_delta;
 
-        // 检查收敛
+        // Check convergence
         if (fabs(lat_delta) < 1e-12)
         {
             break;
         }
     }
 
-    // 转换为度
+    // Convert to degrees
     geo->latitude = coord_rad_to_deg(lat_rad);
     geo->longitude = coord_rad_to_deg(lon_rad);
     geo->altitude = 0.0;
 
-    // 从 OSGB36 转换到 WGS84（简化近似）
-    // 英国区域的近似 Helmert 转换参数
-    double tx = -446.448;  // 米
-    double ty = 125.157;   // 米
-    double tz = -542.060;  // 米
-    double rx = -0.1502;   // 弧秒
-    double ry = -0.2470;   // 弧秒
-    double rz = -0.8421;   // 弧秒
+    // Convert from OSGB36 to WGS84 (simplified approximation)
+    // Approximate Helmert transform parameters for the UK
+    double tx = -446.448;  // m
+    double ty = 125.157;   // m
+    double tz = -542.060;  // m
+    double rx = -0.1502;   // arc-seconds
+    double ry = -0.2470;   // arc-seconds
+    double rz = -0.8421;   // arc-seconds
     double s = 20.4894;    // ppm
 
-    // 使用七参数转换
+    // Use 7-parameter transform
     double lat_rad_osgb = lat_rad;
     double lon_rad_osgb = lon_rad;
 
@@ -1768,7 +1782,7 @@ int coord_from_british_grid(CoordContext *ctx, const BritishGridPoint *bg,
     double Y = (nu + 0.0) * cos_lat * sin_lon;
     double Z = (nu * (1.0 - e2) + 0.0) * sin_lat;
 
-    // 应用七参数转换
+    // Apply 7-parameter transform
     double rx_rad = rx * ARC_SEC_TO_RAD;
     double ry_rad = ry * ARC_SEC_TO_RAD;
     double rz_rad = rz * ARC_SEC_TO_RAD;
@@ -1778,7 +1792,7 @@ int coord_from_british_grid(CoordContext *ctx, const BritishGridPoint *bg,
     double Y2 = ty - X * rz_rad + Y * scale_factor + Z * rx_rad;
     double Z2 = tz + X * ry_rad - Y * rx_rad + Z * scale_factor;
 
-    // 转换回 WGS84 大地坐标
+    // Convert back to WGS84 geodetic coordinates
     const Ellipsoid *wgs84 = &ELLIPSOIDS[DATUM_WGS84];
     double p = sqrt(X2 * X2 + Y2 * Y2);
     double theta = atan2(Z2 * wgs84->a, p * wgs84->b);
@@ -1797,14 +1811,14 @@ int coord_from_british_grid(CoordContext *ctx, const BritishGridPoint *bg,
     return COORD_SUCCESS;
 }
 
-// 日本平面直角坐标系区域参数
+// Japan plane rectangular coordinate system zone parameters
 static const struct
 {
     int zone;
     double lat0;
     double lon0;
-    double false_e;   // 东偏移 (假东距)
-    double false_n;   // 北偏移 (假北距)
+    double false_e;   // Easting offset (false easting)
+    double false_n;   // Northing offset (false northing)
     double scale;
 } japan_zones[] =
 {
@@ -1829,7 +1843,7 @@ static const struct
     {19, 26.0,  154.0,   0,       0,         0.9999}
 };
 
-// 地理坐标转日本网格
+// Geographic coordinate to Japan Grid
 int coord_to_japan_grid(CoordContext *ctx, const GeoCoord *geo,
                         JapanGridPoint *jg)
 {
@@ -1841,7 +1855,7 @@ int coord_to_japan_grid(CoordContext *ctx, const GeoCoord *geo,
     {
         return COORD_ERROR_INVALID_COORD;
     }
-    // 转换为Tokyo基准
+    // Convert to Tokyo datum
     GeoCoord tokyo_geo;
     int ret = coord_convert_datum(ctx, geo, DATUM_TOKYO, &tokyo_geo);
     if (ret != COORD_SUCCESS)
@@ -1852,8 +1866,8 @@ int coord_to_japan_grid(CoordContext *ctx, const GeoCoord *geo,
     double lat = tokyo_geo.latitude;
     double lon = tokyo_geo.longitude;
 
-    // 根据经纬度查找合适的区域（选择最近的中央经线）
-    // 不限制地理范围，支持任意坐标转换
+    // Select the appropriate zone based on lat/lon (nearest central meridian)
+    // No geographic bounds; support any coordinates
     int zone_idx = -1;
     double min_dist = 1e308;
     for (size_t i = 0; i < sizeof(japan_zones) / sizeof(japan_zones[0]); i++)
@@ -1873,7 +1887,7 @@ int coord_to_japan_grid(CoordContext *ctx, const GeoCoord *geo,
         return COORD_ERROR_OUT_OF_RANGE;
     }
 
-    // 获取区域参数
+    // Get zone parameters
     double lat0 = japan_zones[zone_idx].lat0 * DEG_TO_RAD;
     double lon0 = japan_zones[zone_idx].lon0 * DEG_TO_RAD;
     double false_e = japan_zones[zone_idx].false_e;
@@ -1887,18 +1901,18 @@ int coord_to_japan_grid(CoordContext *ctx, const GeoCoord *geo,
     double cos_lat = cos(lat_rad);
     double tan_lat = sin_lat / cos_lat;
 
-    // Bessel 1841 椭球参数
+    // Bessel 1841 ellipsoid parameters
     double a = JAPAN_GRID_A;
     double f = JAPAN_GRID_F;
     double e2 = 2 * f - f * f;
 
-    // 计算子午线弧长 M
+    // Compute meridional arc length M
     double M = a * ((1.0 - e2 / 4.0 - 3.0 * e2 * e2 / 64.0 - 5.0 * e2 * e2 * e2 / 256.0) * lat_rad
                    - (3.0 * e2 / 8.0 + 3.0 * e2 * e2 / 32.0 + 45.0 * e2 * e2 * e2 / 1024.0) * sin(2.0 * lat_rad)
                    + (15.0 * e2 * e2 / 256.0 + 45.0 * e2 * e2 * e2 / 1024.0) * sin(4.0 * lat_rad)
                    - (35.0 * e2 * e2 * e2 / 3072.0) * sin(6.0 * lat_rad));
 
-    // 计算辅助参数
+    // Compute auxiliary parameters
     double N = a / sqrt(1.0 - e2 * sin_lat * sin_lat);
     double T = tan_lat * tan_lat;
     double C = e2 * cos_lat * cos_lat / (1.0 - e2);
@@ -1909,11 +1923,11 @@ int coord_to_japan_grid(CoordContext *ctx, const GeoCoord *geo,
     double A5 = A4 * A;
     double A6 = A5 * A;
 
-    // 计算 X（北坐标）
+    // Compute X (northing)
     jg->x = k0 * (M + N * tan_lat * (A2 / 2.0 + (5.0 - T + 9.0 * C + 4.0 * C * C) * A4 / 24.0
                + (61.0 - 58.0 * T + T * T + 600.0 * C - 330.0 * e2) * A6 / 720.0)) + false_n;
 
-    // 计算 Y（东坐标）
+    // Compute Y (easting)
     jg->y = k0 * N * (A + (1.0 - T + C) * A3 / 6.0
                + (5.0 - 18.0 * T + T * T + 72.0 * C - 58.0 * e2) * A5 / 120.0) + false_e;
 
@@ -1930,12 +1944,12 @@ int coord_from_japan_grid(CoordContext *ctx, const JapanGridPoint *jg,
         return COORD_ERROR_INVALID_INPUT;
     }
 
-    // 获取 Bessel 1841 椭球参数
+    // Get Bessel 1841 ellipsoid parameters
     double a = JAPAN_GRID_A;
     double f = JAPAN_GRID_F;
     double e2 = 2 * f - f * f;
 
-    // 查找区域参数（使用外部定义的 japan_zones 数组）
+    // Lookup zone parameters (using externally defined japan_zones array)
     int zone_idx = -1;
     for (size_t i = 0; i < sizeof(japan_zones) / sizeof(japan_zones[0]); i++)
     {
@@ -1957,19 +1971,19 @@ int coord_from_japan_grid(CoordContext *ctx, const JapanGridPoint *jg,
     double false_n = japan_zones[zone_idx].false_n;
     double k0 = japan_zones[zone_idx].scale;
 
-    // 高斯-克吕格投影反向转换
-    // 移除假偏移
-    // 注意：jg->x 是北坐标，jg->y 是东坐标
-    double northing = jg->x - false_n;   // 北坐标
-    double easting = jg->y - false_e;     // 东坐标
+    // Gauss-Kruger inverse projection
+    // Remove false offsets
+    // Note: jg->x is northing, jg->y is easting
+    double northing = jg->x - false_n;   // Northing
+    double easting = jg->y - false_e;     // Easting
 
-    // 计算辅助参数
-    // M 是子午线弧长，从北坐标计算
+    // Compute auxiliary parameters
+    // M is the meridional arc length, computed from northing
     double M = northing / k0;
     double mu = M / (a * (1.0 - e2 / 4.0 - 3.0 * e2 * e2 / 64.0
                         - 5.0 * e2 * e2 * e2 / 256.0));
 
-    // 计算脚点纬度
+    // Compute footpoint latitude
     double e1 = (1.0 - sqrt(1.0 - e2)) / (1.0 + sqrt(1.0 - e2));
     double J1 = 3.0 * e1 / 2.0 - 27.0 * e1 * e1 * e1 / 32.0;
     double J2 = 21.0 * e1 * e1 / 16.0 - 55.0 * e1 * e1 * e1 * e1 / 32.0;
@@ -1988,7 +2002,7 @@ int coord_from_japan_grid(CoordContext *ctx, const JapanGridPoint *jg,
     double R1 = a * (1.0 - e2) / pow(1.0 - e2 * sin_fp * sin_fp, 1.5);
     double N1 = a / sqrt(1.0 - e2 * sin_fp * sin_fp);
 
-    // D 从东坐标计算
+    // D computed from easting
     double D = easting / (N1 * k0);
     double D2 = D * D;
     double D3 = D2 * D;
@@ -1996,7 +2010,7 @@ int coord_from_japan_grid(CoordContext *ctx, const JapanGridPoint *jg,
     double D5 = D4 * D;
     double D6 = D5 * D;
 
-    // 计算纬度修正
+    // Compute latitude correction
     double Q1 = N1 * tan_fp / R1;
     double Q2 = 0.5 * D2;
     double Q3 = (5.0 + 3.0 * T1 + 10.0 * C1 - 4.0 * C1 * C1
@@ -2006,7 +2020,7 @@ int coord_from_japan_grid(CoordContext *ctx, const JapanGridPoint *jg,
 
     double lat_rad = fp - Q1 * (Q2 - Q3 + Q4);
 
-    // 计算经度修正
+    // Compute longitude correction
     double Q5 = D;
     double Q6 = (1.0 + 2.0 * T1 + C1) * D3 / 6.0;
     double Q7 = (5.0 - 2.0 * C1 + 28.0 * T1 - 3.0 * C1 * C1
@@ -2014,13 +2028,13 @@ int coord_from_japan_grid(CoordContext *ctx, const JapanGridPoint *jg,
 
     double lon_rad = lon0 + (Q5 - Q6 + Q7) / cos_fp;
 
-    // 转换为度
+    // Convert to degrees
     geo->latitude = coord_rad_to_deg(lat_rad);
     geo->longitude = coord_rad_to_deg(lon_rad);
     geo->altitude = 0.0;
     geo->datum = DATUM_TOKYO;
 
-    // 如果需要 WGS84 坐标，进行基准转换
+    // If WGS84 coordinates are needed, perform datum conversion
     if (geo->datum == DATUM_WGS84)
     {
         GeoCoord tokyo_coord = *geo;
@@ -2035,7 +2049,7 @@ int coord_from_japan_grid(CoordContext *ctx, const JapanGridPoint *jg,
     return COORD_SUCCESS;
 }
 
-// ==================== 基准转换函数 ====================
+// ==================== Datum conversion functions ====================
 int coord_convert_datum(CoordContext *ctx, const GeoCoord *src,
                         MapDatum target_datum, GeoCoord *dst)
 {
@@ -2052,21 +2066,21 @@ int coord_convert_datum(CoordContext *ctx, const GeoCoord *src,
     {
         return COORD_ERROR_INVALID_COORD;
     }
-    // 获取转换参数
+    // Get transform parameters
     DatumTransform *params = &ctx->transforms[src->datum][target_datum];
     if (params->dx == 0.0 && params->dy == 0.0 && params->dz == 0.0 &&
             params->rx == 0.0 && params->ry == 0.0 && params->rz == 0.0 &&
             params->scale == 0.0)
     {
-        // 没有转换参数，直接返回
+        // No transform parameters; return directly
         *dst = *src;
         dst->datum = target_datum;
         return COORD_SUCCESS;
     }
-    // 获取源椭球体参数
+    // Get source ellipsoid parameters
     const Ellipsoid *src_ell = &ELLIPSOIDS[src->datum];
     const Ellipsoid *dst_ell = &ELLIPSOIDS[target_datum];
-    // 将经纬度转换为地心直角坐标
+    // Convert lat/lon to geocentric Cartesian coordinates
     double lat_rad = coord_deg_to_rad(src->latitude);
     double lon_rad = coord_deg_to_rad(src->longitude);
     double alt = src->altitude;
@@ -2078,7 +2092,7 @@ int coord_convert_datum(CoordContext *ctx, const GeoCoord *src,
     double X = (N + alt) * cos_lat * cos_lon;
     double Y = (N + alt) * cos_lat * sin_lon;
     double Z = (N * (1.0 - src_ell->e2) + alt) * sin_lat;
-    // 应用七参数转换
+    // Apply 7-parameter transform
     double rx_rad = params->rx * ARC_SEC_TO_RAD;
     double ry_rad = params->ry * ARC_SEC_TO_RAD;
     double rz_rad = params->rz * ARC_SEC_TO_RAD;
@@ -2086,7 +2100,7 @@ int coord_convert_datum(CoordContext *ctx, const GeoCoord *src,
     double X2 = params->dx + X * scale_factor + Y * rz_rad - Z * ry_rad;
     double Y2 = params->dy - X * rz_rad + Y * scale_factor + Z * rx_rad;
     double Z2 = params->dz + X * ry_rad - Y * rx_rad + Z * scale_factor;
-    // 转换回大地坐标
+    // Convert back to geodetic coordinates
     double p = sqrt(X2 * X2 + Y2 * Y2);
     double theta = atan2(Z2 * dst_ell->a, p * dst_ell->b);
     double sin_theta = sin(theta);
@@ -2105,7 +2119,7 @@ int coord_convert_datum(CoordContext *ctx, const GeoCoord *src,
     return COORD_SUCCESS;
 }
 
-// ==================== 测地线计算函数 ====================
+// ==================== Geodesic calculation functions ====================
 int coord_distance(CoordContext *ctx, const GeoCoord *p1, const GeoCoord *p2,
                    double *distance, double *azi1, double *azi2)
 {
@@ -2118,7 +2132,7 @@ int coord_distance(CoordContext *ctx, const GeoCoord *p1, const GeoCoord *p2,
         return COORD_ERROR_INVALID_COORD;
     }
     double s12, a1, a2;
-    // 如果基准不同，需要转换
+    // If datums differ, convert
     if (p1->datum != p2->datum)
     {
         GeoCoord p2_same_datum;
@@ -2188,7 +2202,7 @@ int coord_inverse(CoordContext *ctx, const GeoCoord *p1, const GeoCoord *p2,
     {
         return COORD_ERROR_INVALID_COORD;
     }
-    // 如果基准不同，需要转换
+    // If datums differ, convert
     if (p1->datum != p2->datum)
     {
         GeoCoord p2_same_datum;
@@ -2210,7 +2224,7 @@ int coord_inverse(CoordContext *ctx, const GeoCoord *p1, const GeoCoord *p2,
     return COORD_SUCCESS;
 }
 
-// ==================== 基准转换工具函数 ====================
+// ==================== Datum transform utility functions ====================
 int coord_set_transform_params(CoordContext *ctx, MapDatum from, MapDatum to,
                                const DatumTransform *params)
 {
@@ -2219,50 +2233,50 @@ int coord_set_transform_params(CoordContext *ctx, MapDatum from, MapDatum to,
         return COORD_ERROR_INVALID_INPUT;
     }
     ctx->transforms[from][to] = *params;
-    // 设置反向转换参数（正确计算七参数反向转换）
+    // Set inverse transform parameters (correct 7-parameter inverse)
     if (from != to)
     {
-        // 七参数反向转换的正确公式：
-        // 反向转换需要通过旋转矩阵求逆来计算
-        // 如果正向: X2 = T + s*R*X1
-        // 则反向: X1 = (-1/s)*R^T*(X2-T) = (-1/s)*R^T*X2 + (1/s)*R^T*T
+        // Correct formula for 7-parameter inverse transform:
+        // Inverse transform requires inversion via rotation matrix
+        // If forward: X2 = T + s*R*X1
+        // Then inverse: X1 = (-1/s)*R^T*(X2-T) = (-1/s)*R^T*X2 + (1/s)*R^T*T
         //
-        // 对于小角度近似（弧秒单位），反向参数约为：
-        // 反向平移 = -R^T * T / (1+s)
-        // 反向旋转 ≈ -旋转（但需要更精确计算）
+        // For small-angle approximation (arc-seconds), inverse params are approximately:
+        // Inverse translation = -R^T * T / (1+s)
+        // Inverse rotation ≈ -rotation (but more accurate calc needed)
 
         double s = params->scale * PPM_TO_SCALE;
 
-        // 构建旋转矩阵 R
+        // Build rotation matrix R
         // R = Rz(θz) * Ry(θy) * Rx(θx)
-        // 对于小角度，可以近似为：
+        // For small angles, can be approximated as:
         // R ≈ [ 1    -rz    ry
         //       rz     1   -rx
         //      -ry    rx     1 ]
 
-        // 计算反向转换参数
-        // 反向尺度因子
+        // Compute inverse transform parameters
+        // Inverse scale factor
         ctx->transforms[to][from].scale = -params->scale;
 
-        // 反向旋转参数（近似，对于小角度）
+        // Inverse rotation parameters (approximate, for small angles)
         ctx->transforms[to][from].rx = -params->rx;
         ctx->transforms[to][from].ry = -params->ry;
         ctx->transforms[to][from].rz = -params->rz;
 
-        // 反向平移参数: T_back = -(dx,dy,dz) / (1+s)
-        // 更精确的计算需要考虑旋转矩阵的转置
+        // Inverse translation parameters: T_back = -(dx,dy,dz) / (1+s)
+        // More accurate calculation requires considering rotation matrix transpose
         double factor = 1.0 / (1.0 + s);
         ctx->transforms[to][from].dx = -params->dx * factor;
         ctx->transforms[to][from].dy = -params->dy * factor;
         ctx->transforms[to][from].dz = -params->dz * factor;
 
-        // 对于小角度，可以加入旋转修正项
-        // 修正: T_back ≈ -(T + R×T) / (1+s)
-        // 这里使用一阶近似
+        // For small angles, add rotation correction term
+        // Correction: T_back ≈ -(T + R×T) / (1+s)
+        // Here we use first-order approximation
         double dx_corr = params->ry * params->dz - params->rz * params->dy;
         double dy_corr = params->rz * params->dx - params->rx * params->dz;
         double dz_corr = params->rx * params->dy - params->ry * params->dx;
-        // 将弧秒转换为弧度的修正
+        // Adjustment for converting arc-seconds to radians
         dx_corr *= ARC_SEC_TO_RAD;
         dy_corr *= ARC_SEC_TO_RAD;
         dz_corr *= ARC_SEC_TO_RAD;
@@ -2285,7 +2299,7 @@ int coord_get_transform_params(CoordContext *ctx, MapDatum from, MapDatum to,
     return COORD_SUCCESS;
 }
 
-// ==================== 椭球体工具函数 ====================
+// ==================== Ellipsoid utility functions ====================
 const Ellipsoid *coord_get_ellipsoid(MapDatum datum)
 {
     if (datum >= DATUM_MAX)
@@ -2307,12 +2321,12 @@ int coord_set_custom_ellipsoid(CoordContext *ctx, double a, double f)
     ctx->ellipsoid.e2 = 2 * f - f * f;
     ctx->ellipsoid.ep2 = ctx->ellipsoid.e2 / (1.0 - ctx->ellipsoid.e2);
     ctx->ellipsoid.name = "Custom";
-    // 重新初始化GeographicLib测地线对象
+    // Reinitialize GeographicLib geodesic object
     geod_init(ctx->geod, a, f);
     return COORD_SUCCESS;
 }
 
-// ==================== 错误处理函数 ====================
+// ==================== Error handling functions ====================
 const char *coord_get_error_string(int error_code)
 {
     if (error_code < 0
@@ -2328,7 +2342,7 @@ void coord_set_error_callback(void (*callback)(int, const char *))
     error_callback = callback;
 }
 
-// ==================== 格式转换主函数 ====================
+// ==================== Main format conversion function ====================
 int coord_convert(CoordContext *ctx, const GeoCoord *src,
                   CoordFormat target_format, MapDatum target_datum,
                   char *result_buffer, size_t buffer_size)
@@ -2341,7 +2355,7 @@ int coord_convert(CoordContext *ctx, const GeoCoord *src,
     {
         return COORD_ERROR_INVALID_COORD;
     }
-    // 转换为目标基准
+    // Convert to target datum
     GeoCoord target_geo;
     if (src->datum != target_datum)
     {
@@ -2355,7 +2369,7 @@ int coord_convert(CoordContext *ctx, const GeoCoord *src,
     {
         target_geo = *src;
     }
-    // 根据目标格式进行格式化
+    // Format according to target format
     switch (target_format)
     {
         case COORD_FORMAT_DD:

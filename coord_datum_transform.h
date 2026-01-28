@@ -1,3 +1,17 @@
+/*
+ * =====================================================================================
+ *
+ * Copyright (c) 2026 Zepp Health. All Rights Reserved. This computer program includes
+ * Confidential, Proprietary Information and is a Trade Secret of Zepp Health Ltd.
+ * All use, disclosure, and/or reproduction is prohibited unless authorized in writing.
+ * Licensed under the MIT License. You can contact below email if need.
+ *
+ * version: 0.0.1
+ * Author: wangwenbing@zepp.com
+ *
+ * =====================================================================================
+ */
+
 #ifndef COORD_TRANSFORM_H
 #define COORD_TRANSFORM_H
 
@@ -5,23 +19,23 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-// 前向声明GeographicLib结构体
+// Forward declaration of GeographicLib struct
 struct geod_geodesic;
 
-// 坐标格式枚举
+// Coordinate format enum
 typedef enum
 {
-    COORD_FORMAT_DD = 0,        // 十进制度 DD.ddddd°
-    COORD_FORMAT_DMM,           // 度分 DD°MM.mmm'
-    COORD_FORMAT_DMS,           // 度分秒 DD°MM'SS"
-    COORD_FORMAT_UTM,           // UTM坐标
-    COORD_FORMAT_MGRS,          // MGRS坐标（默认）
-    COORD_FORMAT_BRITISH_GRID,  // 英国网格
-    COORD_FORMAT_JAPAN_GRID,    // 日本网格
+    COORD_FORMAT_DD = 0,        // Decimal degrees DD.ddddd°
+    COORD_FORMAT_DMM,           // Degrees and minutes DD°MM.mmm'
+    COORD_FORMAT_DMS,           // Degrees, minutes, seconds DD°MM'SS"
+    COORD_FORMAT_UTM,           // UTM coordinates
+    COORD_FORMAT_MGRS,          // MGRS coordinates (default)
+    COORD_FORMAT_BRITISH_GRID,  // British National Grid
+    COORD_FORMAT_JAPAN_GRID,    // Japan grid
     COORD_FORMAT_MAX
 } CoordFormat;
 
-// 地图基准枚举
+// Map datum enum
 typedef enum
 {
     DATUM_WGS84 = 0,            // World Geodetic System 1984
@@ -35,104 +49,104 @@ typedef enum
     DATUM_MAX
 } MapDatum;
 
-// 椭球体参数
+// Ellipsoid parameters
 typedef struct
 {
-    double a;           // 长半轴 (meters)
-    double f;           // 扁率
-    double b;           // 短半轴 (meters)
-    double e2;          // 第一偏心率平方
-    double ep2;         // 第二偏心率平方
-    const char *name;   // 椭球体名称
+    double a;           // Semi-major axis (meters)
+    double f;           // Flattening
+    double b;           // Semi-minor axis (meters)
+    double e2;          // First eccentricity squared
+    double ep2;         // Second eccentricity squared
+    const char *name;   // Ellipsoid name
 } Ellipsoid;
 
-// 基准转换七参数
+// 7-parameter datum transform
 typedef struct
 {
-    double dx, dy, dz;          // 平移参数 (meters)
-    double rx, ry, rz;          // 旋转参数 (arc-seconds)
-    double scale;               // 尺度因子 (ppm)
+    double dx, dy, dz;          // Translation parameters (meters)
+    double rx, ry, rz;          // Rotation parameters (arc-seconds)
+    double scale;               // Scale factor (ppm)
 } DatumTransform;
 
-// 地理坐标
+// Geographic coordinate
 typedef struct
 {
-    double latitude;            // 纬度 (degrees)
-    double longitude;           // 经度 (degrees)
-    double altitude;            // 海拔高度 (meters)
-    MapDatum datum;             // 坐标基准
+    double latitude;            // Latitude (degrees)
+    double longitude;           // Longitude (degrees)
+    double altitude;            // Altitude (meters)
+    MapDatum datum;             // Coordinate datum
 } GeoCoord;
 
-// UTM坐标
+// UTM coordinate
 typedef struct
 {
-    int zone;                   // UTM区域 (1-60)
-    char band;                  // 纬度带 (C-X)
-    double easting;             // 东距 (meters)
-    double northing;            // 北距 (meters)
-    double convergence;         // 子午线收敛角 (degrees)
-    double scale_factor;        // 比例因子
-    MapDatum datum;             // 基准
+    int zone;                   // UTM zone (1-60)
+    char band;                  // Latitude band (C-X)
+    double easting;             // Easting (meters)
+    double northing;            // Northing (meters)
+    double convergence;         // Meridian convergence (degrees)
+    double scale_factor;        // Scale factor
+    MapDatum datum;             // Datum
 } UTMPoint;
 
-// MGRS坐标
+// MGRS coordinate
 typedef struct
 {
-    int zone;                   // UTM区域 (1-60)
-    char band;                  // 纬度带 (C-X)
-    char square[3];             // 100km网格方 (2字符)
-    double easting;             // 东距 (meters, 在网格方内)
-    double northing;            // 北距 (meters, 在网格方内)
-    MapDatum datum;             // 基准
+    int zone;                   // UTM zone (1-60)
+    char band;                  // Latitude band (C-X)
+    char square[3];             // 100km grid square (2 chars)
+    double easting;             // Easting (meters, within grid square)
+    double northing;            // Northing (meters, within grid square)
+    MapDatum datum;             // Datum
 } MGRSPoint;
 
-// 英国国家网格坐标
+// British National Grid coordinate
 typedef struct
 {
-    char letters[3];           // 两字母编码
-    double easting;             // 东距 (meters)
-    double northing;            // 北距 (meters)
-    MapDatum datum;             // 基准
+    char letters[3];           // Two-letter code
+    double easting;             // Easting (meters)
+    double northing;            // Northing (meters)
+    MapDatum datum;             // Datum
 } BritishGridPoint;
 
-// 日本网格坐标
+// Japan grid coordinate
 typedef struct
 {
-    int zone;                   // 区域号
-    double x;                   // X坐标
-    double y;                   // Y坐标
-    MapDatum datum;             // 基准
+    int zone;                   // Zone number
+    double x;                   // X coordinate
+    double y;                   // Y coordinate
+    MapDatum datum;             // Datum
 } JapanGridPoint;
 
-// 解析结果
+// Parse result
 typedef struct
 {
-    int success;                // 是否成功
-    GeoCoord coord;             // 解析出的坐标
-    CoordFormat format;         // 检测到的格式
-    MapDatum datum;             // 检测到的基准
-    char error_msg[256];        // 错误信息
+    int success;                // Success flag
+    GeoCoord coord;             // Parsed coordinate
+    CoordFormat format;         // Detected format
+    MapDatum datum;             // Detected datum
+    char error_msg[256];        // Error message
 } ParseResult;
 
-// 测地线结果
+// Geodesic result
 typedef struct
 {
-    double distance;            // 距离 (meters)
-    double azimuth1;            // 正向方位角 (degrees)
-    double azimuth2;            // 反向方位角 (degrees)
+    double distance;            // Distance (meters)
+    double azimuth1;            // Forward azimuth (degrees)
+    double azimuth2;            // Reverse azimuth (degrees)
 } GeodesicResult;
 
-// 坐标转换上下文
+// Coordinate transform context
 typedef struct
 {
-    struct geod_geodesic *geod;  // GeographicLib测地线对象指针
-    Ellipsoid ellipsoid;        // 当前椭球体
-    DatumTransform transforms[DATUM_MAX][DATUM_MAX]; // 转换参数表
+    struct geod_geodesic *geod;  // Pointer to GeographicLib geodesic object
+    Ellipsoid ellipsoid;        // Current ellipsoid
+    DatumTransform transforms[DATUM_MAX][DATUM_MAX]; // Transform parameter table
 } CoordContext;
 
-// ============================ 对外接口列表 ============================
+// ============================ Public API ============================
 
-// 错误码
+// Error codes
 #define COORD_SUCCESS 0
 #define COORD_ERROR_INVALID_INPUT 1
 #define COORD_ERROR_OUT_OF_RANGE 2
@@ -145,17 +159,17 @@ typedef struct
 #define COORD_ERROR_CALCULATION 9
 #define COORD_ERROR_UNSUPPORTED_FORMAT 10
 
-// ==================== 初始化与清理函数 ====================
+// ==================== Initialization and cleanup ====================
 CoordContext *coord_create_context(MapDatum datum);
 void coord_destroy_context(CoordContext *ctx);
 int coord_set_datum(CoordContext *ctx, MapDatum datum);
 
-// ==================== 坐标解析函数 ====================
+// ==================== Parsing functions ====================
 ParseResult coord_parse_string(const char *str, CoordFormat format,
                                MapDatum datum);
 ParseResult coord_auto_parse(const char *str);
 
-// ==================== 坐标格式化函数 ====================
+// ==================== Formatting functions ====================
 int coord_format_to_string(const GeoCoord *coord, CoordFormat format,
                            char *buffer, size_t buffer_size);
 int coord_format_dd(const GeoCoord *coord, char *buffer, size_t buffer_size);
@@ -168,8 +182,8 @@ int coord_format_british_grid(const BritishGridPoint *bg, char *buffer,
 int coord_format_japan_grid(const JapanGridPoint *jg, char *buffer,
                             size_t buffer_size);
 
-// ==================== 坐标转换函数 ====================
-// 地理坐标转其他格式
+// ==================== Coordinate conversion functions ====================
+// Geographic coordinate to other formats
 int coord_to_utm(CoordContext *ctx, const GeoCoord *geo, UTMPoint *utm);
 int coord_from_utm(CoordContext *ctx, const UTMPoint *utm, GeoCoord *geo);
 int coord_to_mgrs(CoordContext *ctx, const GeoCoord *geo, MGRSPoint *mgrs);
@@ -183,11 +197,11 @@ int coord_to_japan_grid(CoordContext *ctx, const GeoCoord *geo,
 int coord_from_japan_grid(CoordContext *ctx, const JapanGridPoint *jg,
                           GeoCoord *geo);
 
-// 基准转换
+// Datum conversion
 int coord_convert_datum(CoordContext *ctx, const GeoCoord *src,
                         MapDatum target_datum, GeoCoord *dst);
 
-// ==================== 测地线计算 ====================
+// ==================== Geodesic calculations ====================
 int coord_distance(CoordContext *ctx, const GeoCoord *p1, const GeoCoord *p2,
                    double *distance, double *azi1, double *azi2);
 int coord_direct(CoordContext *ctx, const GeoCoord *start,
@@ -195,7 +209,7 @@ int coord_direct(CoordContext *ctx, const GeoCoord *start,
 int coord_inverse(CoordContext *ctx, const GeoCoord *p1, const GeoCoord *p2,
                   GeodesicResult *result);
 
-// ==================== 工具函数 ====================
+// ==================== Utility functions ====================
 int coord_get_utm_zone(double longitude, double latitude);
 char coord_get_utm_band(double latitude);
 int coord_validate_point(const GeoCoord *coord);
@@ -209,21 +223,21 @@ double coord_rad_to_deg(double rad);
 double coord_meters_to_feet(double meters);
 double coord_feet_to_meters(double feet);
 
-// ==================== 基准转换工具 ====================
+// ==================== Datum transform utilities ====================
 int coord_set_transform_params(CoordContext *ctx, MapDatum from, MapDatum to,
                                const DatumTransform *params);
 int coord_get_transform_params(CoordContext *ctx, MapDatum from, MapDatum to,
                                DatumTransform *params);
 
-// ==================== 椭球体工具 ====================
+// ==================== Ellipsoid utilities ====================
 const Ellipsoid *coord_get_ellipsoid(MapDatum datum);
 int coord_set_custom_ellipsoid(CoordContext *ctx, double a, double f);
 
-// ==================== 错误处理 ====================
+// ==================== Error handling ====================
 const char *coord_get_error_string(int error_code);
 void coord_set_error_callback(void (*callback)(int, const char *));
 
-// ==================== 格式转换主函数 ====================
+// ==================== Main format conversion function ====================
 int coord_convert(CoordContext *ctx, const GeoCoord *src,
                   CoordFormat target_format, MapDatum target_datum,
                   char *result_buffer, size_t buffer_size);
